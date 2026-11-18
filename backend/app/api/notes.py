@@ -1,31 +1,29 @@
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from sqlmodel import Session, select
+from app.database import get_session
+from app.models import Note, User
+from app.auth import get_current_user
 from paddleocr import PaddleOCR
 
 router = APIRouter()
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Инициализируем OCR. lang='ru' для русского, 'en' для английского.
+# Инициализируем OCR (как в рабочем варианте)
 try:
     ocr_engine = PaddleOCR(use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False, lang='ru')
 except Exception as e:
     print(f"Ошибка инициализации OCR: {e}")
     ocr_engine = None
 
-# Временное хранилище в памяти
-NOTES: list[dict] = []
-
-class NoteOut(BaseModel):
-    id: str
-    filename: str
-    status: str
-    text: str | None = None
-
-@router.post("/notes", response_model=NoteOut)
-async def upload_note(file: UploadFile = File(...)):
+@router.post("/notes")
+async def upload_note(
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
     if not ocr_engine:
         raise HTTPException(status_code=500, detail="OCR движок не загружен")
 
@@ -33,35 +31,45 @@ async def upload_note(file: UploadFile = File(...)):
     ext = Path(file.filename).suffix
     file_path = UPLOAD_DIR / f"{note_id}{ext}"
     
-    # 1. Сохраняем файл
+    # 1. Сохраняем файл на диск
     file_path.write_bytes(await file.read())
 
-    # 2. Создаем запись
-    note = {"id": note_id, "filename": file.filename, "status": "processing", "text": None}
-    NOTES.append(note)
-
-    # 3. Запускаем OCR (пока синхронно, для теста)
+    # 2. Запускаем OCR
+    full_text = ""
+    status = "done"
     try:
-        # В PaddleOCR 3.x метод predict возвращает список объектов
         result = ocr_engine.predict(str(file_path))
-        
-        full_text = ""
         if result:
             for res in result:
-                # Извлекаем распознанный текст
                 texts = res.get('rec_texts', [])
                 if texts:
                     full_text += "\n".join(texts) + "\n"
-        
-        note["text"] = full_text.strip()
-        note["status"] = "done"
+        full_text = full_text.strip()
     except Exception as e:
-        print(f"Ошибка распознавания: {e}")
-        note["status"] = "error"
-        note["text"] = f"Не удалось распознать текст: {e}"
+        print(f"Ошибка OCR: {e}")
+        status = "error"
+        full_text = f"Ошибка распознавания: {e}"
 
-    return note
+    # 3. Создаем запись в БД
+    new_note = Note(
+        filename=file.filename,
+        text=full_text,
+        status=status,
+        user_id=current_user.id,
+        subject="Без предмета"
+    )
+    
+    session.add(new_note)
+    session.commit()
+    session.refresh(new_note)
 
-@router.get("/notes", response_model=list[NoteOut])
-def list_notes():
-    return NOTES
+    return new_note
+
+@router.get("/notes")
+def list_notes(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    # Возвращаем только конспекты текущего пользователя
+    notes = session.exec(select(Note).where(Note.user_id == current_user.id)).all()
+    return notes

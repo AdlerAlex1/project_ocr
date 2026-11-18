@@ -6,7 +6,10 @@ __pycache__/
 backend/uploads/
 .env
 .env.local
-
+backend/database.db
+backend/uploads/
+backend/.venv/
+frontend/node_modules/
 # Node (Фронтенд)
 frontend/node_modules/
 dist/
