@@ -1,0 +1,17 @@
+# Python (Бэкенд)
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.so
+backend/uploads/
+.env
+.env.local
+
+# Node (Фронтенд)
+frontend/node_modules/
+dist/
+dist-ssr/
+*.local
+
+# macOS (мусор системы)
+.DS_Store
