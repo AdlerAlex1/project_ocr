@@ -14,19 +14,23 @@ export default function Login() {
     e.preventDefault();
     try {
       if (isRegister) {
-        // Регистрация
-        await axios.post("http://localhost:8000/register", { email, password });
+        // Регистрация: теперь с префиксом /api
+        await axios.post("http://localhost:8000/api/register", { email, password });
         alert("Успешно зарегистрирован! Теперь войдите.");
         setIsRegister(false);
       } else {
-        // Вход (OAuth2 требует отправки данных в формате формы)
+        // Вход: теперь с префиксом /api
         const formData = new URLSearchParams();
-        formData.append("username", email);
+        formData.append("username", email); // username здесь - это email
         formData.append("password", password);
         
-        const res = await axios.post("http://localhost:8000/token", formData);
+        const res = await axios.post(
+          "http://localhost:8000/api/token", 
+          formData, 
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
         login(res.data.access_token);
-        navigate("/"); // Перекидываем на главную
+        navigate("/");
       }
     } catch (error: any) {
       alert(error.response?.data?.detail || "Ошибка. Проверьте данные.");

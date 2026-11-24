@@ -3,3 +3,8 @@ uvicorn[standard]
 sqlalchemy
 python-multipart
 pydantic-settings
+pyjwt
+httpx
+python-dotenv
+fastapi
+uvicorn

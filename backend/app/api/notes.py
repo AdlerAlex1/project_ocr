@@ -1,75 +1,127 @@
-import uuid
-from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
-from sqlmodel import Session, select
-from app.database import get_session
-from app.models import Note, User
-from app.auth import get_current_user
-from paddleocr import PaddleOCR
 
-router = APIRouter()
+import uuid
+import logging
+from io import BytesIO
+from pathlib import Path
+
+from PIL import Image, UnidentifiedImageError
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlmodel import Session, select
+
+from app.database import get_session
+from app.api.auth import get_current_user
+from app.models import Note, User
+from app.ocr import recognize_image
+
+logger = logging.getLogger(__name__)
+
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Инициализируем OCR (как в рабочем варианте)
-try:
-    ocr_engine = PaddleOCR(use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False, lang='ru')
-except Exception as e:
-    print(f"Ошибка инициализации OCR: {e}")
-    ocr_engine = None
+ALLOWED_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp"
+}
+
+router = APIRouter()
+
+
+@router.get("/notes")
+async def list_notes(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    notes = session.exec(
+        select(Note).where(Note.user_id == current_user.id)
+    ).all()
+
+    return notes
+
 
 @router.post("/notes")
 async def upload_note(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    if not ocr_engine:
-        raise HTTPException(status_code=500, detail="OCR движок не загружен")
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Разрешены JPG, PNG и WEBP"
+        )
+
+    content = await file.read()
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Файл пустой"
+        )
+
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail="Максимальный размер файла — 10 МБ"
+        )
+
+    try:
+        image = Image.open(BytesIO(content))
+        image.load()
+
+        buffer = BytesIO()
+        image.convert("RGB").save(buffer, format="JPEG")
+        prepared_image = buffer.getvalue()
+
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось открыть изображение"
+        )
 
     note_id = str(uuid.uuid4())
-    ext = Path(file.filename).suffix
+    ext = Path(file.filename or "image.jpg").suffix or ".jpg"
     file_path = UPLOAD_DIR / f"{note_id}{ext}"
-    
-    # 1. Сохраняем файл на диск
-    file_path.write_bytes(await file.read())
 
-    # 2. Запускаем OCR
+    file_path.write_bytes(content)
+
+    status_ = "done"
     full_text = ""
-    status = "done"
-    try:
-        result = ocr_engine.predict(str(file_path))
-        if result:
-            for res in result:
-                texts = res.get('rec_texts', [])
-                if texts:
-                    full_text += "\n".join(texts) + "\n"
-        full_text = full_text.strip()
-    except Exception as e:
-        print(f"Ошибка OCR: {e}")
-        status = "error"
-        full_text = f"Ошибка распознавания: {e}"
+    ocr_error = None
 
-    # 3. Создаем запись в БД
+    try:
+        full_text = await recognize_image(
+            prepared_image,
+            mime_type="JPEG"
+        )
+
+        if not full_text.strip():
+            status_ = "error"
+            ocr_error = "Текст на фотографии не распознан"
+
+    except Exception as e:
+        logger.exception("Ошибка OCR")
+        status_ = "error"
+        ocr_error = str(e)
+
     new_note = Note(
-        filename=file.filename,
+        filename=file.filename or "image.jpg",
         text=full_text,
-        status=status,
+        status=status_,
         user_id=current_user.id,
-        subject="Без предмета"
+        subject="Без предмета",
     )
-    
+
     session.add(new_note)
     session.commit()
     session.refresh(new_note)
 
-    return new_note
-
-@router.get("/notes")
-def list_notes(
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
-):
-    # Возвращаем только конспекты текущего пользователя
-    notes = session.exec(select(Note).where(Note.user_id == current_user.id)).all()
-    return notes
+    return {
+        "id": new_note.id,
+        "filename": new_note.filename,
+        "text": new_note.text,
+        "status": new_note.status,
+        "subject": new_note.subject,
+        "ocr_error": ocr_error
+    }

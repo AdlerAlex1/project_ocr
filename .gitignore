@@ -1,20 +1,44 @@
-# Python (Бэкенд)
-backend/.venv/
+```gitignore
+# Python
 __pycache__/
 *.py[cod]
-*.so
-backend/uploads/
+.venv/
+venv/
 .env
-.env.local
-backend/database.db
-backend/uploads/
-backend/.venv/
-frontend/node_modules/
-# Node (Фронтенд)
-frontend/node_modules/
-dist/
-dist-ssr/
-*.local
+.env.*
+!.env.example
 
-# macOS (мусор системы)
+# Базы данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Загруженные фотографии
+uploads/
+media/
+
+# Frontend
+node_modules/
+.next/
+dist/
+build/
+coverage/
+
+# Системные файлы
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Логи
+*.log
+```
+authorized_key.json
+*.json
+.env
+*.db
+uploads/
+__pycache__/
+.venv/
+venv/
+node_modules/
