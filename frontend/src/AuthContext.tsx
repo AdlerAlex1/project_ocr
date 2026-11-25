@@ -1,26 +1,32 @@
-import { createContext, useContext, useState } from "react";
-import type { ReactNode } from "react";
 
-type AuthContextType = {
+import {
+  createContext,
+  useContext,
+  useState,
+  type ReactNode,
+} from "react";
+
+interface AuthContextType {
   token: string | null;
   login: (token: string) => void;
   logout: () => void;
-};
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Пытаемся достать токен из localStorage при старте
-  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem("token")
+  );
 
   const login = (newToken: string) => {
-    setToken(newToken);
     localStorage.setItem("token", newToken);
+    setToken(newToken);
   };
 
   const logout = () => {
-    setToken(null);
     localStorage.removeItem("token");
+    setToken(null);
   };
 
   return (
@@ -32,6 +38,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within AuthProvider");
+
+  if (!context) {
+    throw new Error("useAuth должен использоваться внутри AuthProvider");
+  }
+
   return context;
 }
