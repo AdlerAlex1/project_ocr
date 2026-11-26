@@ -1,5 +1,5 @@
 from sqlmodel import create_engine, Session
-from app.models import User, Note
+from app.models import User, Note, NoteAsset, NoteAnnotation
 
 # Для продакшена меняй на postgresql://user:pass@host/db
 SQLALCHEMY_DATABASE_URL = "sqlite:///./site_ocr.db"

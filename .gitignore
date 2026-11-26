@@ -42,3 +42,6 @@ __pycache__/
 .venv/
 venv/
 node_modules/
+# Local test and assistant files
+Skill.md
+frontend/mcp_test.txt

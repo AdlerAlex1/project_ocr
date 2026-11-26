@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useDropzone } from "react-dropzone";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./AuthContext";
 import Login from "./Login";
+import DocumentEditor from "./components/editor/DocumentEditor";
+import type { Note } from "./components/editor/editor.types";
 
 const API = "http://localhost:8000/api";
-
-type Note = { id: number; filename: string; status: string; text: string | null; subject?: string };
 
 function MainPage() {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -15,14 +15,19 @@ function MainPage() {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [showOcrEditor, setShowOcrEditor] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState<string | null>(null);
   const { token, logout } = useAuth();
   const navigate = useNavigate();
 
-  const api = axios.create({
-    baseURL: API,
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  const api = useMemo(
+    () =>
+      axios.create({
+        baseURL: API,
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    [token],
+  );
 
   const loadNotes = () => {
     setIsInitialLoading(true);
@@ -42,10 +47,12 @@ function MainPage() {
     setSelectedPdfUrl(null);
     setSelectedNote(null);
     setIsEditing(false);
+    setShowOcrEditor(false);
   };
 
   const handleOpenNote = async (note: Note) => {
     setIsEditing(false);
+    setShowOcrEditor(false);
     setSelectedNote(note);
 
     if (note.filename.toLowerCase().endsWith(".pdf")) {
@@ -498,9 +505,8 @@ function MainPage() {
           <ul className="file-list">
             {notes.map((n) => {
               const isPdf = n.filename.toLowerCase().endsWith(".pdf");
-              const canOpen = isPdf || n.status === "done";
               return (
-                <li key={n.id} onClick={() => canOpen && handleOpenNote(n)} className={`file-item ${canOpen ? "clickable" : ""}`}>
+                <li key={n.id} onClick={() => handleOpenNote(n)} className="file-item clickable">
                   <div className="file-info">
                     <span>{isPdf ? "📄" : "📝"} {n.filename}</span>
                     <span className={`status-badge ${isPdf || n.status === "done" ? "status-done" : "status-pending"}`}>
@@ -515,7 +521,16 @@ function MainPage() {
         )}
       </main>
 
-      {selectedNote && (
+      {selectedNote && !selectedNote.filename.toLowerCase().endsWith(".pdf") && !showOcrEditor && (
+        <DocumentEditor
+          note={selectedNote}
+          api={api}
+          onClose={closeViewer}
+          onEditOcr={() => setShowOcrEditor(true)}
+        />
+      )}
+
+      {selectedNote && (selectedNote.filename.toLowerCase().endsWith(".pdf") || showOcrEditor) && (
         <div className="modal-overlay" onClick={closeViewer}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -544,6 +559,17 @@ function MainPage() {
                 ) : (
                   <button onClick={() => setIsEditing(true)} className="btn-secondary">✏️ Редактировать</button>
                 )
+              )}
+              {!selectedNote.filename.toLowerCase().endsWith(".pdf") && (
+                <button
+                  onClick={() => {
+                    setShowOcrEditor(false);
+                    setIsEditing(false);
+                  }}
+                  className="btn-secondary"
+                >
+                  К редактору
+                </button>
               )}
               <button onClick={closeViewer} className="btn-secondary">Закрыть</button>
             </div>
