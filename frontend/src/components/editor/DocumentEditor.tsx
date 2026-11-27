@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios, { type AxiosInstance } from "axios";
-import { FileImage, X } from "lucide-react";
+import { CircleHelp, FileImage, X } from "lucide-react";
 import EditorCanvas, { type EditorCanvasHandle } from "./EditorCanvas";
 import EditorToolbar from "./EditorToolbar";
 import type {
@@ -16,7 +16,8 @@ interface DocumentEditorProps {
   note: Note;
   api: AxiosInstance;
   onClose: () => void | Promise<void>;
-  onEditOcr: () => void | Promise<void>;
+  onOpenFaq: () => void;
+  onReturnToOcr: () => void | Promise<void>;
 }
 
 type SaveStatus = "loading" | "saved" | "pending" | "saving" | "error";
@@ -62,7 +63,8 @@ export default function DocumentEditor({
   note,
   api,
   onClose,
-  onEditOcr,
+  onOpenFaq,
+  onReturnToOcr,
 }: DocumentEditorProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -180,9 +182,9 @@ export default function DocumentEditor({
     void exitAfterSave(onClose);
   }, [exitAfterSave, onClose]);
 
-  const handleEditOcr = useCallback(() => {
-    void exitAfterSave(onEditOcr);
-  }, [exitAfterSave, onEditOcr]);
+  const handleReturnToOcr = useCallback(() => {
+    void exitAfterSave(onReturnToOcr);
+  }, [exitAfterSave, onReturnToOcr]);
 
   const retrySave = useCallback(() => {
     const payload = latestAnnotationsRef.current;
@@ -314,6 +316,16 @@ export default function DocumentEditor({
             </div>
           </div>
           <div className="document-editor-header-actions">
+            <button
+              type="button"
+              className="editor-close-button"
+              onClick={onOpenFaq}
+              aria-label="Открыть помощь"
+              title="Помощь"
+              disabled={isClosing}
+            >
+              <CircleHelp size={19} aria-hidden="true" />
+            </button>
             <span
               className={`editor-save-notice editor-save-${saveStatus}`}
               role="status"
@@ -353,7 +365,6 @@ export default function DocumentEditor({
             zoom={zoom}
             history={history}
             hasSelection={hasSelection}
-            hasOcrText={note.text !== null}
             onToolChange={setActiveTool}
             onColorChange={setColor}
             onStrokeWidthChange={setStrokeWidth}
@@ -363,7 +374,7 @@ export default function DocumentEditor({
             onUndo={() => canvasRef.current?.undo()}
             onRedo={() => canvasRef.current?.redo()}
             onDeleteSelected={() => canvasRef.current?.deleteSelected()}
-            onEditOcr={handleEditOcr}
+            onReturnToOcr={handleReturnToOcr}
           />
 
           <main className="document-editor-workspace">

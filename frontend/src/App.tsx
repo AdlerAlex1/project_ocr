@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { CircleHelp } from "lucide-react";
 import { useDropzone } from "react-dropzone";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./AuthContext";
 import Login from "./Login";
+import FAQ from "./components/FAQ";
 import DocumentEditor from "./components/editor/DocumentEditor";
 import type { Note } from "./components/editor/editor.types";
 
@@ -16,6 +18,7 @@ function MainPage() {
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showOcrEditor, setShowOcrEditor] = useState(false);
+  const [showFaq, setShowFaq] = useState(false);
   const [selectedPdfUrl, setSelectedPdfUrl] = useState<string | null>(null);
   const { token, logout } = useAuth();
   const navigate = useNavigate();
@@ -51,11 +54,12 @@ function MainPage() {
   };
 
   const handleOpenNote = async (note: Note) => {
+    const isPdf = note.filename.toLowerCase().endsWith(".pdf");
     setIsEditing(false);
-    setShowOcrEditor(false);
+    setShowOcrEditor(!isPdf);
     setSelectedNote(note);
 
-    if (note.filename.toLowerCase().endsWith(".pdf")) {
+    if (isPdf) {
       try {
         const response = await api.get(`/notes/${note.id}/file`, {
           responseType: "blob",
@@ -178,6 +182,12 @@ function MainPage() {
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   .btn-logout {
@@ -379,15 +389,46 @@ function MainPage() {
 
   .modal-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
+  }
+
+  .modal-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-shrink: 1;
+  }
+
+  .faq-header-button {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: #f8fafc;
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .faq-header-button:hover {
+    background: #475569;
   }
 
   .modal-title {
+    flex: 1 1 180px;
+    min-width: 0;
     margin: 0;
     font-size: 22px;
     font-weight: 700;
     color: #f8fafc;
+    overflow-wrap: anywhere;
   }
 
   .modal-textarea {
@@ -458,6 +499,16 @@ function MainPage() {
       font-size: 18px;
     }
 
+    .header-actions {
+      gap: 8px;
+    }
+
+    .header-actions .btn-secondary,
+    .header-actions .btn-logout {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
+
     .main-content {
       margin: 24px auto;
     }
@@ -479,7 +530,12 @@ function MainPage() {
 
       <header className="header">
         <div className="header-logo">📚 OCR Конспекты</div>
-        <button onClick={logout} className="btn-logout">Выйти</button>
+        <nav className="header-actions" aria-label="Основная навигация">
+          <button type="button" onClick={() => setShowFaq(true)} className="btn-secondary">
+            <CircleHelp size={17} aria-hidden="true" /> Помощь
+          </button>
+          <button onClick={logout} className="btn-logout">Выйти</button>
+        </nav>
       </header>
 
       <main className="main-content">
@@ -526,7 +582,8 @@ function MainPage() {
           note={selectedNote}
           api={api}
           onClose={closeViewer}
-          onEditOcr={() => setShowOcrEditor(true)}
+          onOpenFaq={() => setShowFaq(true)}
+          onReturnToOcr={() => setShowOcrEditor(true)}
         />
       )}
 
@@ -535,7 +592,27 @@ function MainPage() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">{selectedNote.filename}</h2>
-              <button onClick={closeViewer} style={{ background: '#334155', border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f8fafc' }}>×</button>
+              <div className="modal-header-actions">
+                {!selectedNote.filename.toLowerCase().endsWith(".pdf") && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOcrEditor(false)}
+                    className="btn-secondary"
+                  >
+                    Редактировать изображение
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="faq-header-button"
+                  onClick={() => setShowFaq(true)}
+                  aria-label="Открыть помощь"
+                  title="Помощь"
+                >
+                  <CircleHelp size={19} aria-hidden="true" />
+                </button>
+                <button onClick={closeViewer} style={{ background: '#334155', border: 'none', borderRadius: '50%', width: 32, height: 32, fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f8fafc' }}>×</button>
+              </div>
             </div>
             {selectedNote.filename.toLowerCase().endsWith(".pdf") ? (
               selectedPdfUrl ? (
@@ -560,22 +637,13 @@ function MainPage() {
                   <button onClick={() => setIsEditing(true)} className="btn-secondary">✏️ Редактировать</button>
                 )
               )}
-              {!selectedNote.filename.toLowerCase().endsWith(".pdf") && (
-                <button
-                  onClick={() => {
-                    setShowOcrEditor(false);
-                    setIsEditing(false);
-                  }}
-                  className="btn-secondary"
-                >
-                  К редактору
-                </button>
-              )}
               <button onClick={closeViewer} className="btn-secondary">Закрыть</button>
             </div>
           </div>
         </div>
       )}
+
+      {showFaq && <FAQ onClose={() => setShowFaq(false)} />}
     </div>
   );
 }

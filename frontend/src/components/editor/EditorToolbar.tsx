@@ -29,7 +29,6 @@ interface EditorToolbarProps {
   zoom: number;
   history: EditorHistoryState;
   hasSelection: boolean;
-  hasOcrText: boolean;
   onToolChange: (tool: EditorTool) => void;
   onColorChange: (color: string) => void;
   onStrokeWidthChange: (width: number) => void;
@@ -39,7 +38,7 @@ interface EditorToolbarProps {
   onUndo: () => void;
   onRedo: () => void;
   onDeleteSelected: () => void;
-  onEditOcr: () => void;
+  onReturnToOcr: () => void;
 }
 
 export default function EditorToolbar({
@@ -51,7 +50,6 @@ export default function EditorToolbar({
   zoom,
   history,
   hasSelection,
-  hasOcrText,
   onToolChange,
   onColorChange,
   onStrokeWidthChange,
@@ -61,7 +59,7 @@ export default function EditorToolbar({
   onUndo,
   onRedo,
   onDeleteSelected,
-  onEditOcr,
+  onReturnToOcr,
 }: EditorToolbarProps) {
   const toolButtons = [
     { id: "pen" as const, label: "Перо", Icon: Pencil },
@@ -85,7 +83,7 @@ export default function EditorToolbar({
             <button
               key={id}
               type="button"
-              className={`editor-tool-button${activeTool === id ? " is-active" : ""}`}
+              className={`editor-tool-button editor-tool-choice-button${activeTool === id ? " is-active" : ""}`}
               aria-pressed={activeTool === id}
               title={label}
               onClick={() => onToolChange(id)}
@@ -220,12 +218,10 @@ export default function EditorToolbar({
         </div>
       </div>
 
-      {hasOcrText && (
-        <button type="button" className="editor-tool-button" onClick={onEditOcr}>
-          <FileText size={18} aria-hidden="true" />
-          <span>Текст OCR</span>
-        </button>
-      )}
+      <button type="button" className="editor-tool-button" onClick={onReturnToOcr}>
+        <FileText size={18} aria-hidden="true" />
+        <span>К результатам OCR</span>
+      </button>
     </aside>
   );
 }

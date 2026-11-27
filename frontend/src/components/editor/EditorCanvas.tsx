@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -51,6 +52,21 @@ interface ImageDimensions {
   height: number;
 }
 
+interface FrameDimensions {
+  width: number;
+  height: number;
+}
+
+interface CanvasLayout {
+  width: number;
+  height: number;
+  imageLeft: number;
+  imageTop: number;
+  imageWidth: number;
+  imageHeight: number;
+  viewportTransform: [number, number, number, number, number, number];
+}
+
 interface PanOffset {
   x: number;
   y: number;
@@ -63,6 +79,52 @@ interface Point {
 
 type ShapeTool = Extract<EditorTool, "line" | "arrow" | "rectangle" | "circle">;
 type FabricEventHandler<Event> = (event: Event) => void;
+
+function getCanvasLayout(
+  image: ImageDimensions,
+  frame: FrameDimensions,
+  zoom: number,
+): CanvasLayout {
+  const frameWidth = frame.width || image.width;
+  const frameHeight = frame.height || image.height;
+  const availableWidth = Math.max(1, frameWidth - 48);
+  const availableHeight = Math.max(1, frameHeight - 48);
+  const imageScale = Math.min(
+    1,
+    availableWidth / image.width,
+    availableHeight / image.height,
+  );
+  const imageWidth = image.width * imageScale;
+  const imageHeight = image.height * imageScale;
+  const zoomCompensation = Math.min(zoom, 1);
+  const width = frameWidth / zoomCompensation;
+  const height = frameHeight / zoomCompensation;
+  const imageLeft = (width - imageWidth) / 2;
+  const imageTop = (height - imageHeight) / 2;
+
+  return {
+    width,
+    height,
+    imageLeft,
+    imageTop,
+    imageWidth,
+    imageHeight,
+    viewportTransform: [
+      imageWidth / image.width,
+      0,
+      0,
+      imageHeight / image.height,
+      imageLeft,
+      imageTop,
+    ],
+  };
+}
+
+function applyCanvasLayout(canvas: Canvas, layout: CanvasLayout): void {
+  canvas.setDimensions({ width: layout.width, height: layout.height });
+  canvas.setViewportTransform(layout.viewportTransform);
+  canvas.calcOffset();
+}
 
 interface ShapeDrag {
   pointerId: number;
@@ -167,6 +229,7 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
     },
     ref,
   ) {
+    const frameRef = useRef<HTMLDivElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
     const canvasElementRef = useRef<HTMLCanvasElement>(null);
     const fabricCanvasRef = useRef<Canvas | null>(null);
@@ -180,8 +243,21 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
     const historyIndexRef = useRef(0);
     const panRef = useRef<PanOffset>({ x: 0, y: 0 });
     const [dimensions, setDimensions] = useState<ImageDimensions | null>(null);
+    const [frameDimensions, setFrameDimensions] = useState<FrameDimensions>({
+      width: 0,
+      height: 0,
+    });
     const [pan, setPan] = useState<PanOffset>({ x: 0, y: 0 });
     const [canvasReady, setCanvasReady] = useState(false);
+    const canvasLayout = useMemo(
+      () =>
+        dimensions
+          ? getCanvasLayout(dimensions, frameDimensions, zoom)
+          : null,
+      [dimensions, frameDimensions, zoom],
+    );
+    const canvasLayoutRef = useRef<CanvasLayout | null>(canvasLayout);
+    canvasLayoutRef.current = canvasLayout;
 
     const publishHistory = useCallback(() => {
       onHistoryChange({
@@ -192,13 +268,14 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
 
     const reportAnnotations = useCallback(
       (canvas: Canvas) => {
+        if (!dimensions) return;
         onAnnotationsChange({
-          width: canvas.getWidth(),
-          height: canvas.getHeight(),
+          width: dimensions.width,
+          height: dimensions.height,
           canvas: canvas.toJSON(),
         });
       },
-      [onAnnotationsChange],
+      [dimensions, onAnnotationsChange],
     );
 
     const pushHistory = useCallback(() => {
@@ -228,6 +305,8 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
         historyIndexRef.current = nextIndex;
         await canvas.loadFromJSON(snapshot);
         if (fabricCanvasRef.current !== canvas) return;
+        const layout = canvasLayoutRef.current;
+        if (layout) applyCanvasLayout(canvas, layout);
         canvas.requestRenderAll();
         publishHistory();
         reportAnnotations(canvas);
@@ -269,6 +348,29 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
     );
 
     useEffect(() => {
+      const frame = frameRef.current;
+      if (!frame) return;
+
+      const updateFrameDimensions = () => {
+        const nextDimensions = {
+          width: frame.clientWidth,
+          height: frame.clientHeight,
+        };
+        setFrameDimensions((current) =>
+          current.width === nextDimensions.width &&
+          current.height === nextDimensions.height
+            ? current
+            : nextDimensions,
+        );
+      };
+
+      updateFrameDimensions();
+      const resizeObserver = new ResizeObserver(updateFrameDimensions);
+      resizeObserver.observe(frame);
+      return () => resizeObserver.disconnect();
+    }, []);
+
+    useEffect(() => {
       const canvasElement = canvasElementRef.current;
       if (!canvasElement || !dimensions) return;
       if (
@@ -289,6 +391,10 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
         selection: false,
         skipTargetFind: true,
       });
+      const initialLayout = canvasLayoutRef.current;
+      if (initialLayout) {
+        applyCanvasLayout(canvas, initialLayout);
+      }
       fabricCanvasRef.current = canvas;
       canvasReadyRef.current = false;
 
@@ -436,6 +542,7 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
       upperCanvas.addEventListener("pointercancel", finishPointerAction);
 
       const resizeObserver = new ResizeObserver(refreshCanvasOffset);
+      if (frameRef.current) resizeObserver.observe(frameRef.current);
       if (imageRef.current) resizeObserver.observe(imageRef.current);
       window.addEventListener("resize", refreshCanvasOffset);
 
@@ -478,9 +585,10 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
           }
           if (!isActive || fabricCanvasRef.current !== canvas) return;
 
+          const layout = canvasLayoutRef.current;
+          if (layout) applyCanvasLayout(canvas, layout);
           historyRef.current = [JSON.stringify(canvas.toJSON())];
           historyIndexRef.current = 0;
-          canvas.calcOffset();
           canvas.requestRenderAll();
           publishHistory();
           canvasReadyRef.current = true;
@@ -532,6 +640,14 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
       publishHistory,
       pushHistory,
     ]);
+
+    useEffect(() => {
+      const canvas = fabricCanvasRef.current;
+      if (!canvas || !canvasReadyRef.current || !canvasLayout) return;
+
+      applyCanvasLayout(canvas, canvasLayout);
+      canvas.requestRenderAll();
+    }, [canvasLayout]);
 
     useEffect(() => {
       const previousTool = activeToolRef.current;
@@ -594,10 +710,13 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
     }, [zoom, pan]);
 
     return (
-      <div className="editor-page-frame">
+      <div className="editor-page-frame" ref={frameRef}>
         <div
           className={`editor-page editor-page-tool-${tool}`}
           style={{
+            ...(canvasLayout
+              ? { width: canvasLayout.width, height: canvasLayout.height }
+              : {}),
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           }}
         >
@@ -606,6 +725,18 @@ const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
             src={imageUrl}
             alt={filename}
             draggable={false}
+            style={
+              canvasLayout
+                ? {
+                    left: canvasLayout.imageLeft,
+                    top: canvasLayout.imageTop,
+                    width: canvasLayout.imageWidth,
+                    height: canvasLayout.imageHeight,
+                    maxWidth: "none",
+                    maxHeight: "none",
+                  }
+                : undefined
+            }
             onLoad={(event) => {
               setDimensions({
                 width: event.currentTarget.naturalWidth,
